@@ -1,0 +1,291 @@
+#!/usr/bin/env php
+<?php
+
+require_once __DIR__ . '/app/Helpers/helpers.php';
+
+function console_line($text = '')
+{
+    echo $text . PHP_EOL;
+}
+
+function studly($value)
+{
+    $value = str_replace(['-', '_'], ' ', $value);
+    $value = ucwords($value);
+    return str_replace(' ', '', $value);
+}
+
+function ensure_directory($path)
+{
+    if (!is_dir($path)) {
+        mkdir($path, 0777, true);
+    }
+}
+
+function write_file_if_not_exists($path, $content)
+{
+    if (file_exists($path)) {
+        console_line("Already exists: {$path}");
+        return false;
+    }
+
+    ensure_directory(dirname($path));
+    file_put_contents($path, $content);
+    console_line("Created: {$path}");
+    return true;
+}
+
+function recursive_copy($source, $destination, array $exclude = [])
+{
+    $source = rtrim($source, DIRECTORY_SEPARATOR);
+    $destination = rtrim($destination, DIRECTORY_SEPARATOR);
+
+    if (in_array(basename($source), $exclude, true)) {
+        return;
+    }
+
+    if (is_dir($source)) {
+        ensure_directory($destination);
+
+        $items = scandir($source);
+
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+
+            if (in_array($item, $exclude, true)) {
+                continue;
+            }
+
+            recursive_copy(
+                $source . DIRECTORY_SEPARATOR . $item,
+                $destination . DIRECTORY_SEPARATOR . $item,
+                $exclude
+            );
+        }
+
+        return;
+    }
+
+    copy($source, $destination);
+}
+
+function replace_in_file($file, array $replacements)
+{
+    if (!file_exists($file)) {
+        return;
+    }
+
+    $content = file_get_contents($file);
+
+    foreach ($replacements as $search => $replace) {
+        $content = str_replace($search, $replace, $content);
+    }
+
+    file_put_contents($file, $content);
+}
+
+function make_controller($name)
+{
+    $className = studly(str_replace('.php', '', $name));
+    $path = app_path('Controllers/' . $className . '.php');
+
+    $viewFolder = strtolower(str_replace('Controller', '', $className));
+
+    $content = <<<PHP
+<?php
+
+require_once app_path('Core/Controller.php');
+
+class {$className} extends Controller
+{
+    public function index()
+    {
+        \$this->view('{$viewFolder}.index', [
+            'title' => '{$className}'
+        ]);
+    }
+}
+
+PHP;
+
+    write_file_if_not_exists($path, $content);
+}
+
+function make_model($name)
+{
+    $className = studly(str_replace('.php', '', $name));
+    $table = strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', $className)) . 's';
+    $path = app_path('Models/' . $className . '.php');
+
+    $content = <<<PHP
+<?php
+
+require_once app_path('Core/Model.php');
+
+class {$className} extends Model
+{
+    protected \$table = '{$table}';
+}
+
+PHP;
+
+    write_file_if_not_exists($path, $content);
+}
+
+function make_middleware($name)
+{
+    $className = studly(str_replace('.php', '', $name));
+    $path = app_path('Middleware/' . $className . '.php');
+
+    $content = <<<PHP
+<?php
+
+class {$className}
+{
+    public function handle()
+    {
+        // Middleware logic here
+    }
+}
+
+PHP;
+
+    write_file_if_not_exists($path, $content);
+}
+
+function make_view($name)
+{
+    $path = base_path('resources/views/' . str_replace('.', '/', $name) . '.php');
+    $title = studly(basename(str_replace('.', '/', $name)));
+
+    $content = <<<PHP
+<main class="page">
+    <section class="hero single-hero">
+        <div class="hero-card">
+            <h1>{$title}</h1>
+            <p>This is the {$name} view.</p>
+        </div>
+    </section>
+</main>
+
+PHP;
+
+    write_file_if_not_exists($path, $content);
+}
+
+function make_project($projectName)
+{
+    $projectName = trim($projectName);
+
+    if ($projectName === '') {
+        console_line('Usage: php console make:project project_name');
+        exit(1);
+    }
+
+    $source = __DIR__;
+    $destination = getcwd() . DIRECTORY_SEPARATOR . $projectName;
+
+    if (file_exists($destination)) {
+        console_line("Target already exists: {$destination}");
+        exit(1);
+    }
+
+    $exclude = [
+        '.git',
+        '.idea',
+        '.vscode',
+        'node_modules',
+        'vendor',
+        'storage',
+        'console.old'
+    ];
+
+    recursive_copy($source, $destination, $exclude);
+
+    ensure_directory($destination . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'logs');
+
+    $appName = ucwords(str_replace(['-', '_'], ' ', $projectName));
+
+    replace_in_file(
+        $destination . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'app.php',
+        [
+            "'name' => 'Emma Starter'" => "'name' => '" . addslashes($appName) . "'"
+        ]
+    );
+
+    replace_in_file(
+        $destination . DIRECTORY_SEPARATOR . 'README.md',
+        [
+            'Emma Starter' => $appName
+        ]
+    );
+
+    console_line("Full scaffold cloned successfully into: {$destination}");
+    console_line("Next steps:");
+    console_line("1. cd {$projectName}");
+    console_line("2. update config/database.php");
+    console_line("3. run php -S localhost:8000 -t public");
+}
+
+$command = $argv[1] ?? null;
+$argument = $argv[2] ?? null;
+
+if (!$command) {
+    console_line('Emma Starter Console');
+    console_line('');
+    console_line('Available commands:');
+    console_line('  php console make:controller NameController');
+    console_line('  php console make:model Name');
+    console_line('  php console make:middleware NameMiddleware');
+    console_line('  php console make:view folder.name');
+    console_line('  php console make:project project_name');
+    exit(0);
+}
+
+switch ($command) {
+    case 'make:controller':
+        if (!$argument) {
+            console_line('Usage: php console make:controller NameController');
+            exit(1);
+        }
+        make_controller($argument);
+        break;
+
+    case 'make:model':
+        if (!$argument) {
+            console_line('Usage: php console make:model Name');
+            exit(1);
+        }
+        make_model($argument);
+        break;
+
+    case 'make:middleware':
+        if (!$argument) {
+            console_line('Usage: php console make:middleware NameMiddleware');
+            exit(1);
+        }
+        make_middleware($argument);
+        break;
+
+    case 'make:view':
+        if (!$argument) {
+            console_line('Usage: php console make:view folder.name');
+            exit(1);
+        }
+        make_view($argument);
+        break;
+
+    case 'make:project':
+        if (!$argument) {
+            console_line('Usage: php console make:project project_name');
+            exit(1);
+        }
+        make_project($argument);
+        break;
+
+    default:
+        console_line("Unknown command: {$command}");
+        exit(1);
+}
