@@ -1,5 +1,8 @@
 <?php
 
+$router->post('/mac-access/verify', 'MacAccessController@verify');
+$router->get('/mac-access/status', 'MacAccessController@status');
+
 $router->get('/', 'HomeController@index', ['AuthMiddleware']);
 
 $router->get('/login', 'AuthController@showLogin', ['GuestMiddleware']);

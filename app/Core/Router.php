@@ -34,6 +34,7 @@ class Router
 
         $route = $this->routes[$method][$uri];
 
+        $this->runMiddlewares(config('app.global_middlewares', []));
         $this->runMiddlewares($route['middlewares']);
 
         $action = $route['action'];

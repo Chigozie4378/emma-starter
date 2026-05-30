@@ -49,6 +49,7 @@ class AuthController extends Controller
 
     public function logout()
     {
+        MacAccess::clear();
         Auth::logout();
         $this->redirect('/login');
     }
